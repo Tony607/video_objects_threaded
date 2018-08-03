@@ -230,14 +230,6 @@ def main():
         print_usage()
         return 1
 
-    # get list of all the .mp4 files in the image directory
-    input_video_filename_list = os.listdir(input_video_path)
-    input_video_filename_list = [i for i in input_video_filename_list if i.endswith('.mp4')]
-    if (len(input_video_filename_list) < 1):
-        # no images to show
-        print('No video (.mp4) files found')
-        return 1
-
     # Set logging level to only log errors
     mvnc.global_set_option(mvnc.GlobalOption.RW_LOG_LEVEL, 3)
 
