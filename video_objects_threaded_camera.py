@@ -13,14 +13,16 @@ import time
 import os
 import sys
 from sys import argv
-
+from collections import namedtuple
+from AsyncImWrite import AsyncImWrite
+asyncImWriter = AsyncImWrite()
 # only accept classifications with 1 in the class id index.
 # default is to accept all object clasifications.
 # for example if object_classifications_mask[1] == 0 then
 #    will ignore aeroplanes
-object_classifications_mask = [1, 1, 1, 1, 1, 1, 1,
-                               1, 1, 1, 1, 1, 1, 1,
-                               1, 1, 1, 1, 1, 1, 1]
+object_classifications_mask = [0, 0, 0, 0, 0, 1, 1,
+                               1, 1, 1, 0, 0, 1, 0,
+                               0, 1, 0, 0, 0, 0, 0]
 
 NETWORK_GRAPH_FILENAME = "./graph"
 
@@ -36,10 +38,14 @@ CAMERA_INDEX = 0
 obj_detector_proc = None
 
 video_proc = None
-
-# read video files from this directory
-input_video_path = '.'
-
+# Last known number of persons.
+last_num_persons = 0
+# The current saved image's index.
+save_index = 0
+# The max saved image, rotating overwrite oldest.
+MAX_SAVED_IMAGES = 1000
+# The Point named tuple to describe the center point, like a class.
+Point = namedtuple('Point', ['x', 'y'])
 # the resize_window arg will modify these if its specified on the commandline
 resize_output = False
 resize_output_width = 0
@@ -70,6 +76,12 @@ def handle_keys(raw_key:int, obj_detector_proc:SsdMobileNetProcessor):
     return True
 
 
+def get_center_from_object_info(object_info):
+    left   = object_info[1]
+    top    = object_info[2]
+    right  = object_info[3]
+    bottom = object_info[4]
+    return Point(x= (left + right)/2, y=(top + bottom)/2)
 
 def overlay_on_image(display_image:numpy.ndarray, object_info_list:list):
     """Overlays the boxes and labels onto the display image.
@@ -82,11 +94,11 @@ def overlay_on_image(display_image:numpy.ndarray, object_info_list:list):
            [3] float value for box lower right X
            [4] float value for box lower right Y
            [5] float value that is the probability 0.0 -1.0 for the network classification.
-    :return: None
+    :return: The detected persons as a list of dicts, each dict contains 'class'
     """
     source_image_width = display_image.shape[1]
     source_image_height = display_image.shape[0]
-
+    agg_results = []
     for one_object in object_info_list:
         percentage = int(one_object[5] * 100)
 
@@ -120,7 +132,9 @@ def overlay_on_image(display_image:numpy.ndarray, object_info_list:list):
 
         # label text above the box
         cv2.putText(display_image, label_text, (label_left, label_bottom), cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_text_color, 1)
-
+        if one_object[0] == 'person':
+            agg_results.append({'percentage': percentage, 'center': get_center_from_object_info(one_object)})
+    return agg_results
 
 def handle_args():
     """Reads the commandline args and adjusts initial values of globals values to match
@@ -151,7 +165,7 @@ def handle_args():
                     object_classifications_mask[int(exclude_id)] = 0
             except:
                 print('Error with exclude_classes argument. ')
-                return False;
+                return False
 
         elif (str(an_arg).lower().startswith('init_min_score=')):
             try:
@@ -224,7 +238,8 @@ def main():
     :return: None
     """
     global resize_output, resize_output_width, resize_output_height, \
-           obj_detector_proc, resize_output, resize_output_width, resize_output_height, video_proc
+           obj_detector_proc, resize_output, resize_output_width, resize_output_height, video_proc, \
+           last_num_persons, save_index, MAX_SAVED_IMAGES, asyncImWriter
 
     if (not handle_args()):
         print_usage()
@@ -288,14 +303,24 @@ def main():
                 exit_app = True
                 break
 
-            overlay_on_image(display_image, filtered_objs)
-
+            agg_results = overlay_on_image(display_image, filtered_objs)
+            num_persons = len(agg_results)
+            
             if (resize_output):
                 display_image = cv2.resize(display_image,
                                             (resize_output_width, resize_output_height),
                                             cv2.INTER_LINEAR)
             cv2.imshow(cv_window_name, display_image)
-
+            if last_num_persons != num_persons:
+                print(last_num_persons, '->', num_persons)
+                last_num_persons = num_persons
+                img_name = "frame%d.jpg"%save_index
+                asyncImWriter.imwrite(img_name, display_image)
+                save_index += 1
+                if save_index > MAX_SAVED_IMAGES:
+                    save_index = 0
+                    print('Will overwrite old images next time.')
+                print('save', img_name)
             raw_key = cv2.waitKey(1)
             if (raw_key != -1):
                 if (handle_keys(raw_key, obj_detector_proc) == False):

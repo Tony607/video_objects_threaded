@@ -44,8 +44,13 @@ run_py: prereqs ssd_mobilenet videos
 
 .PHONY: run_cam
 run_cam: prereqs ssd_mobilenet
-	@echo "\nmaking run_py"
-	python3 ./video_objects_threaded.py
+	@echo "\nmaking run_cam"
+	python3 ./video_objects_threaded_camera.py
+
+.PHONY: run_gimbal
+run_gimbal: prereqs ssd_mobilenet
+	@echo "\nmaking run_gimbal"
+	python3 ./video_objects_threaded_gimbal.py
 
 .PHONY: run
 run: run_py
